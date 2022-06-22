@@ -1,0 +1,30 @@
+localizationDateobs: '2018-01-16T00:36:53'
+localizationName: '214.74000_28.14000_11.19000'
+numPerPage: 10
+startDate: '2018-01-11 00:36:53'
+endDate: '2018-01-29 00:36:53'
+skyportal_token: 419bd07a-5c0e-4ee1-a07e-2e97bc03ad9a
+skyportal_url: http://localhost:5000
+whitelisted: false
+source_fields:
+  - id
+  - ra
+  - dec
+  - origin
+  - alias
+photometry_fields:
+  - obj_id
+  - assignment_id
+  - file
+  - instrument_id
+
+
+photometry_file_fields:
+  - mjd
+  - ra
+  - dec
+  - ra_unc
+  - dec_unc
+  - filter
+  - origin
+  
