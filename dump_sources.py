@@ -3,6 +3,13 @@ import os
 import yaml
 import csv
 
+class MyDumper(yaml.SafeDumper):
+    def write_line_break(self, data=None):
+        super().write_line_break(data)
+
+        if len(self.indents) == 1 or len(self.indents) == 2:
+            super().write_line_break()
+
 def yaml_to_dict(file_path):
     """
     Open a config file and return a dictionary containing the configuration.
@@ -45,7 +52,7 @@ def dict_to_yaml(dict, file_path):
         "w",
     ) as stream:
         try:
-            yaml.dump(dict, stream)
+            yaml.dump(dict, stream, Dumper=MyDumper, sort_keys=False, default_flow_style=False)
         except yaml.YAMLError as exc:
             raise exc
 
@@ -138,7 +145,6 @@ def get_sources(startDate: str = None, endDate: str = None, localizationDateobs:
         params["localizationName"] = localizationName
 
     sources = api("GET", f"{url}/api/sources", params=params, token=token)
-
     data = []
     if sources.status_code == 200:
         data = sources.json()["data"]["sources"]
@@ -178,23 +184,17 @@ def get_all_sources(startDate: str = None, endDate: str = None, localizationDate
     while finished == False:
         status_code, data = get_sources(startDate, endDate, localizationDateobs, localizationName, numPerPage, pageNumber, url, token)
         if status_code == 200:
-            if len(data) > 0:
-                if len(sources) == 0:
-                    sources = data
-                    pageNumber += 1
-                elif data[len(data)-1]['id'] == sources[len(sources)-1]['id']:
-                    finished = True
-                    print('Finished')
-                else:
-                    sources.extend(data)
-                    pageNumber += 1
+            if len(sources) == 0:
+                sources = data
+                pageNumber += 1
             else:
-                finished = True
-                print("Finished")
+                sources.extend(data)
+                pageNumber += 1
+        elif status_code == 500:
+            finished = True
         else:
             finished = True
             print("Error getting sources")
-        finished = True
 
     return status_code, sources
 
@@ -269,15 +269,17 @@ def main():
     token = config["skyportal_token"]
 
     status, data = get_all_sources(startDate, endDate, localizationDateobs, localizationName, numPerPage, url, token)
-    if status == 200:
+
+    if status == 200 or status == 500:
         sources, photometry = seperate_sources_from_phot(data)
         # save sources and photometry in one yaml file
         sources_and_phot = {
             "sources": sources,
             "photometry": photometry
         }
-        with open('results/'+localizationDateobs+'.yaml',  'w') as outfile:
-            yaml.dump(sources_and_phot, outfile, default_flow_style=False)
-
+        dict_to_yaml(sources_and_phot, 'results/'+localizationDateobs+'.yaml')
+        print("Saved sources and photometry in results/"+localizationDateobs+".yaml")
+    else:
+        print("Error getting sources")
 
 main()
