@@ -130,6 +130,8 @@ def get_sources(startDate: str = None, endDate: str = None, localizationDateobs:
 
     params = {
         "includePhotometry": True,
+        "sortBy": "saved_at",
+        "sortOrder": "desc",
     }
     if numPerPage is not None:
         params["numPerPage"] = numPerPage
@@ -228,6 +230,10 @@ def seperate_sources_from_phot(data: list):
     # for each source, only keep the keys in the source_keys list
     for source in data:
         sources.append({key: source[key] if key in source else None for key in source_keys})
+        if 'group_ids' in source_keys:
+            sources[-1]['group_ids'] = [group['id'] for group in source['groups']]
+        # remove keys with None values
+        sources[-1] = {key: value for key, value in sources[-1].items() if value is not None}
         # group by instrument id of the photometry
         photometry_grouped = {}
         for phot in source['photometry']:
@@ -238,6 +244,8 @@ def seperate_sources_from_phot(data: list):
         # create a photometry object, with the fields from the phot_keys list, and a reference to a csv file with the fields from the phot_file_keys list
             photometry = {key: source[key] if key in source else None for key in phot_keys}
             photometry = photometry | {key: phot[0][key] if key in phot[0] else None for key in phot_keys}
+            #remove keys with None values
+            photometry = {key: value for key, value in photometry.items() if value is not None}
             # init the file as a dict with the keys from the phot_file_keys list and empty lists for the values
             file = {key: [] for key in phot_file_keys}
             for line in phot:
