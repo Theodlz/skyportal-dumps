@@ -12,6 +12,8 @@ source_fields:
   - dec
   - origin
   - alias
+  - group_ids
+  - redshift
 photometry_fields:
   - obj_id
   - assignment_id
