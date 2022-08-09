@@ -4,9 +4,12 @@ import uuid
 import csv
 import yaml
 import requests
-
+group_fields = ['name']
+telescope_fields = ['name', 'nickname', 'lat', 'lon', 'elevation', 'diameter', 'robotic', 'skycam_link', 'weather_link']
+instrument_fields = ['name', 'type', 'band', 'telescope_id', 'filters', 'api_classname', 'api_classname_obsplan', 'treasuremap_id', 'sensitivity_data']
 source_fields = ['id', 'ra', 'dec', 'origin', 'alias', 'group_ids', 'redshift']
 photometry_fields = ['mjd', 'filter', 'mag', 'magerr', 'magsys', 'limiting_mag', 'ra', 'dec', 'ra_unc', 'dec_unc', 'origin']
+photometry_ref_fields = ['obj_id', 'instrument_id', 'group_ids', 'file']
 
 class MyDumper(yaml.SafeDumper):
     def write_line_break(self, data=None):
@@ -100,6 +103,206 @@ def api(
     headers = {"Authorization": f"token {token}"}
     response = requests.request(method, endpoint, json=data, headers=headers)
     return response
+
+def formattedInstrument(instrument, telescope_yaml_ids: dict = None):
+    """
+    Keep only the fields that are needed.
+    """
+    formatted_instrument = {}
+    for field in instrument_fields:
+        if field in instrument:
+            formatted_instrument[field] = instrument[field]
+        else:
+            formatted_instrument[field] = None
+
+    formatted_instrument['=id'] = instrument['name'].strip()
+    if telescope_yaml_ids:
+        formatted_instrument['telescope_id'] = f"={telescope_yaml_ids[instrument['telescope_id']]}"
+    
+    return formatted_instrument
+
+def formattedTelescope(telescope):
+    """
+    Keep only the fields that are needed.
+    """
+    formatted_telescope = {}
+    for field in telescope_fields:
+        if field in telescope:
+            formatted_telescope[field] = telescope[field]
+        else:
+            formatted_telescope[field] = None
+
+    formatted_telescope['=id'] = telescope['nickname'].strip()
+
+    return formatted_telescope
+
+def formattedGroup(group):
+    """
+    Keep only the fields that are needed.
+    """
+    formatted_group = {}
+    for field in group_fields:
+        if field in group:
+            formatted_group[field] = group[field]
+        else:
+            formatted_group[field] = None
+
+    formatted_group['=id'] = group['name'].strip()
+
+    return formatted_group
+
+def get_telescopes(url: str = None, token: str = None):
+    """
+    Get all telescopes from skyportal using its API
+
+    Arguments
+    ----------
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of telescopes
+    """
+    telescopes = api("GET", f"{url}/api/telescope", token=token)
+    data = []
+    if telescopes.status_code == 200:
+        data = telescopes.json()["data"]
+    return telescopes.status_code, data
+
+def get_telescopes_from_ids(telescope_ids: list = None, url: str = None, token: str = None):
+    """
+    Get telescopes from skyportal using its API
+
+    Arguments
+    ----------
+        telescope_ids : list
+            List of telescope ids
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of telescopes
+    """
+    status, all_telescopes = get_telescopes(url, token)
+    if status == 200:
+        telescopes = [telescope for telescope in all_telescopes if telescope['id'] in telescope_ids]
+    else:
+        telescopes = []
+    
+    return status, telescopes
+
+def get_instruments(url: str = None, token: str = None):
+    """
+    Get all instruments from skyportal using its API
+
+    Arguments
+    ----------
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of instruments
+    """
+    instruments = api("GET", f"{url}/api/instrument", token=token)
+    data = []
+    if instruments.status_code == 200:
+        data = instruments.json()["data"]
+    return instruments.status_code, data
+
+def get_instruments_from_ids(instrument_ids: list = None, url: str = None, token: str = None):
+    """
+    Get all instruments from skyportal using its API
+
+    Arguments
+    ----------
+        instrument_ids : list
+            List of instrument ids
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of instruments
+    """
+    status, all_instruments = get_instruments(url, token)
+    if status == 200:
+        instruments = [instrument for instrument in all_instruments if instrument['id'] in instrument_ids]
+    else:
+        instruments = []
+    
+    return status, instruments
+
+def get_groups(url: str = None, token: str = None):
+    """
+    Get all groups from skyportal using its API
+
+    Arguments
+    ----------
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of groups
+    """
+    params = {
+        "includeSingleUserGroups": False,
+    }
+    groups = api("GET", f"{url}/api/groups", params=params, token=token)
+    data = []
+    if groups.status_code == 200:
+        data = groups.json()["data"]['all_groups']
+    return groups.status_code, data
+
+def get_groups_from_ids(group_ids: list = None, url: str = None, token: str = None):
+    """
+    Get all groups from skyportal using its API
+
+    Arguments
+    ----------
+        group_ids : list
+            List of group ids
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of groups
+    """
+    status, all_groups = get_groups(url, token)
+    if status == 200:
+        groups = [group for group in all_groups if group['id'] in group_ids]
+    else:
+        groups = []
+    
+    return status, groups
 
 def get_sources(startDate: str = None, endDate: str = None, localizationDateobs: str = None, localizationName: str = None, numPerPage: int = None, pageNumber: int = None, url: str = None, token: str = None):
     """
@@ -255,7 +458,7 @@ def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localiz
 
     return status_code, sources
 
-def formattedSource(source):
+def formattedSource(source, group_yaml_ids: dict = None):
     """
     Keep only the fields that are needed.
     """
@@ -265,8 +468,13 @@ def formattedSource(source):
             formatted_source[field] = source[field]
         else:
             formatted_source[field] = None
-
-    formatted_source['group_ids'] = [group['id'] for group in source['groups']]
+    if group_yaml_ids is None:
+        formatted_source['group_ids'] = [group['id'] for group in source['groups']]
+    else:
+        formatted_source['group_ids'] = []
+        for group_id in source['group_ids']:
+            if group_id in group_yaml_ids.keys():
+                formatted_source['group_ids'].append(group_yaml_ids[group_id])
     
     return formatted_source
 
@@ -282,6 +490,28 @@ def formattedPhot(photometry):
             formatted_phot[field] = None
     
     return formatted_phot
+
+def formattedPhotRef(photometryRef, group_yaml_ids: dict = None, instrument_yaml_ids: dict = None):
+    """
+    Keep only the fields that are needed.
+    """
+    formatted_phot_ref = {}
+    for field in photometry_ref_fields:
+        if field in photometryRef:
+            formatted_phot_ref[field] = photometryRef[field]
+        else:
+            formatted_phot_ref[field] = None
+
+    if group_yaml_ids is not None:
+        formatted_phot_ref['group_ids'] = []
+        for group_id in photometryRef['group_ids']:
+            if group_id in group_yaml_ids.keys():
+                formatted_phot_ref['group_ids'].append(group_yaml_ids[group_id])
+
+    if instrument_yaml_ids is not None:
+        formatted_phot_ref['instrument_id'] = f"={instrument_yaml_ids[photometryRef['instrument_id']]}"
+    
+    return formatted_phot_ref
 
 def seperate_sources_from_phot(data: list, directory: str = None):
     """
@@ -299,11 +529,15 @@ def seperate_sources_from_phot(data: list, directory: str = None):
         photometry : list
             List of photometry
     """
+    instrument_ids_full_list = []
+    group_ids_full_list = []
     source_list_to_yaml = []
     photometry_list_to_yaml = []
     # for each source, only keep the keys in the source_keys list
     for source in data:
         source_list_to_yaml.append(formattedSource(source))
+        group_ids_full_list.extend(formattedSource(source)['group_ids'])
+        group_ids_full_list = list(set(group_ids_full_list))
         # seperate the photometry by instrument and groups
         if len(source["photometry"]) > 0:
             photometry_dict = {}
@@ -313,6 +547,8 @@ def seperate_sources_from_phot(data: list, directory: str = None):
                 for group in phot['groups']:
                     group_ids.append(group['id'])
                 group_ids.sort()
+                group_ids_full_list.extend(list(group_ids))
+                group_ids_full_list = list(set(group_ids_full_list))
                 if instrument_id not in photometry_dict.keys():
                     photometry_dict[instrument_id] = {
                         "instrument_name": phot['instrument_name'],
@@ -345,8 +581,11 @@ def seperate_sources_from_phot(data: list, directory: str = None):
                         'file': "photometry/" + filename
                     })
 
+            instrument_ids_full_list.extend(list(photometry_dict.keys()))
+            instrument_ids_full_list = list(set(instrument_ids_full_list))
 
-    return source_list_to_yaml, photometry_list_to_yaml
+
+    return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list, group_ids_full_list
         
 
 
@@ -377,20 +616,57 @@ def main():
         whitelisted = config["whitelisted"]
     url = config["skyportal_url"]
     token = config["skyportal_token"]
-
+    print("Fetching sources and photometry from Skyportal")
     status, data = get_all_sources_and_phot(startDate, endDate, localizationDateobs, localizationName, numPerPage, url, token, whitelisted)
 
     if status == 200 or status == 500 or status == 400:
         print("Found {} sources".format(len(data)))
-        print("Saving sources... Please wait".format(directory))
-        seperate_sources_from_phot(data, directory)
-        sources, photometry = seperate_sources_from_phot(data, directory)
+        print("Formatting photometry...")
+        sources, photometry_ref, instrument_ids, group_ids = seperate_sources_from_phot(data, directory)
+        print("Fetching groups, instruments and telescopes from Skyportal...")
+        status, instruments = get_instruments_from_ids(instrument_ids, url, token)
+        telescope_ids = list(set([instrument['telescope_id'] for instrument in instruments]))
+        status, telescopes = get_telescopes_from_ids(telescope_ids, url, token)
+        status, groups = get_groups_from_ids(group_ids, url, token)
+        print("Formatting sources, groups, instruments and telescopes...")
+        #reformat the groups, instruments, and telescopes
+        new_groups = []
+        group_yaml_ids = {}
+        for group in groups:
+            formatted_group = formattedGroup(group)
+            new_groups.append(formatted_group)
+            group_yaml_ids[group["id"]] = formatted_group["=id"]
+        groups = new_groups
+
+        new_telescopes = []
+        telescope_yaml_ids = {}
+        for telescope in telescopes:
+            formatted_telescope = formattedTelescope(telescope)
+            new_telescopes.append(formatted_telescope)
+            telescope_yaml_ids[telescope["id"]] = formatted_telescope["=id"]
+        telescopes = new_telescopes
+            
+        new_instruments = []
+        instrument_yaml_ids = {}
+        for instrument in instruments:
+            formatted_instrument = formattedInstrument(instrument, telescope_yaml_ids)
+            new_instruments.append(formatted_instrument)
+            instrument_yaml_ids[instrument["id"]] = formatted_instrument["=id"]
+        instruments = new_instruments
+
+        sources = [formattedSource(source, group_yaml_ids) for source in sources]
+        photometry_ref = [formattedPhotRef(phot_ref, group_yaml_ids, instrument_yaml_ids) for phot_ref in photometry_ref]
+
         # save sources and photometry in one yaml file
-        sources_and_phot = {
+        data_to_yaml = {
+            "groups": groups,
+            "telescopes": telescopes,
+            "instruments": instruments,
             "sources": sources,
-            "photometry": photometry
+            "photometry": photometry_ref
         }
-        dict_to_yaml(sources_and_phot, 'results/'+directory+'/sources.yaml')
+        print("Saving data to results/{}/data.yaml".format(directory))
+        dict_to_yaml(data_to_yaml, "results/{}/data.yaml".format(directory))
         # also save a separate yaml file containing the params used to get the sources
         params = {
             "localizationDateobs": localizationDateobs,
@@ -403,6 +679,6 @@ def main():
 
         }
         dict_to_yaml(params, 'results/'+directory+'/config_used.yaml')
-        print("Saved sources to results/{}/sources.yaml".format(directory))
+        print("Done!")
     
 main()
