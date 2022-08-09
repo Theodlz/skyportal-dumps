@@ -474,7 +474,7 @@ def formattedSource(source, group_yaml_ids: dict = None):
         formatted_source['group_ids'] = []
         for group_id in source['group_ids']:
             if group_id in group_yaml_ids.keys():
-                formatted_source['group_ids'].append(group_yaml_ids[group_id])
+                formatted_source['group_ids'].append(f"={group_yaml_ids[group_id]}")
     
     return formatted_source
 
@@ -506,7 +506,7 @@ def formattedPhotRef(photometryRef, group_yaml_ids: dict = None, instrument_yaml
         formatted_phot_ref['group_ids'] = []
         for group_id in photometryRef['group_ids']:
             if group_id in group_yaml_ids.keys():
-                formatted_phot_ref['group_ids'].append(group_yaml_ids[group_id])
+                formatted_phot_ref['group_ids'].append(f"={group_yaml_ids[group_id]}")
 
     if instrument_yaml_ids is not None:
         formatted_phot_ref['instrument_id'] = f"={instrument_yaml_ids[photometryRef['instrument_id']]}"
@@ -587,8 +587,6 @@ def seperate_sources_from_phot(data: list, directory: str = None):
 
     return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list, group_ids_full_list
         
-
-
 def main():
     """
     Main function
@@ -633,9 +631,18 @@ def main():
         new_groups = []
         group_yaml_ids = {}
         for group in groups:
-            formatted_group = formattedGroup(group)
-            new_groups.append(formatted_group)
-            group_yaml_ids[group["id"]] = formatted_group["=id"]
+            if group['name'] == 'Sitewide Group':
+                group_yaml_ids[group["id"]] = "public_group_id"
+            else:
+                formatted_group = formattedGroup(group)
+                new_groups.append(formatted_group)
+                group_yaml_ids[group["id"]] = formatted_group["=id"]
+
+        print('\n')
+        print(groups)
+        print('\n')
+        print(new_groups)
+        print('\n')
         groups = new_groups
 
         new_telescopes = []
@@ -660,8 +667,8 @@ def main():
         # save sources and photometry in one yaml file
         data_to_yaml = {
             "groups": groups,
-            "telescopes": telescopes,
-            "instruments": instruments,
+            "telescope": telescopes,
+            "instrument": instruments,
             "sources": sources,
             "photometry": photometry_ref
         }
