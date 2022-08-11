@@ -5,6 +5,9 @@ import csv
 import yaml
 import requests
 import argparse
+import numpy as np
+import healpy as hp
+import re
 
 group_fields = ['name']
 telescope_fields = ['name', 'nickname', 'lat', 'lon', 'elevation', 'diameter', 'robotic', 'skycam_link', 'weather_link']
@@ -152,6 +155,57 @@ def formattedGroup(group):
     formatted_group['=id'] = group['name'].strip()
 
     return formatted_group
+
+def get_gcnevent(localizationDateobs: str = None, url: str = None, token: str = None):
+    gcn_event = api("GET", f"{url}/api/gcn_event/{localizationDateobs}", token=token)
+
+    data = {}
+    if gcn_event.status_code == 200:
+        data = gcn_event.json()["data"]
+    return gcn_event.status_code, data
+
+def get_gcnevent_data(localizationDateobs: str = None, localizationName: str = None, url: str = None, token: str = None):
+    status, gcn_event = get_gcnevent(localizationDateobs, url, token)
+    if status != 200:
+        print(f"Error {status} when getting gcn_event for {localizationDateobs}")
+        return status, None, None
+    localizationNames = [localization["localization_name"] for localization in gcn_event["localizations"]]
+    if localizationName not in localizationNames:
+        print(f"{localizationName} not in {localizationNames}")
+        return 404, None, None
+
+    notices = gcn_event['gcn_notices']
+    # keep notices that have a "content" field
+    notices = [notice for notice in notices if "content" in notice]
+    # check if the localization name is like: float_float_float (e.g. -0.5_0.5_0.5) using regex
+    if re.match(r"^-?\d+\.?\d*_-?\d+\.?\d*_-?\d+\.?\d*$", localizationName):
+        ra, dec, radius = localizationName.split("_")
+        # the localization is a fits file
+        position_notices = [notice for notice in notices if '<Position2D unit="deg">' in notice["content"]]
+        for notice in position_notices:
+            notice_ra = notice["content"].split('<C1>')[1].split('</C1>')[0]
+            notice_dec = notice["content"].split('<C2>')[1].split('</C2>')[0]
+            notice_radius = notice["content"].split('<Error2Radius>')[1].split('</Error2Radius>')[0]
+            if notice_ra in ra and notice_dec in dec and notice_radius in radius:
+                return 200, gcn_event['tags'], notice["content"]
+    # check if the localization name is a fits file
+    extensions = ['.fit', '.fits', '.gz']
+    if any(extension in localizationName for extension in extensions):
+        fits_notices = [notice for notice in notices if '<Param name="skymap_fits"' in notice["content"]]
+        for notice in fits_notices:
+            notice_file = notice["content"].split('<Param name="skymap_fits"')[1].split('</Param>')[0]
+            if localizationName in notice_file:
+                return 200, gcn_event['tags'], notice["content"]
+
+    return 200, gcn_event['tags'], None
+
+def get_skymap(localizationDateobs: str = None, localizationName: str = None, url: str = None, token: str = None):
+    params = {"include2DMap": True}
+    localization = api("GET", f"{url}/api/localization/{localizationDateobs}/name/{localizationName}", params=params, token=token)
+    data = np.array([])
+    if localization.status_code == 200:
+        data = np.array(localization.json()['data']["flat_2d"])
+    return data
 
 def get_telescopes(url: str = None, token: str = None):
     """
@@ -461,7 +515,7 @@ def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localiz
 
     return status_code, sources
 
-def formattedSource(source, group_yaml_ids: dict = None):
+def formattedSource(source):
     """
     Keep only the fields that are needed.
     """
@@ -471,13 +525,7 @@ def formattedSource(source, group_yaml_ids: dict = None):
             formatted_source[field] = source[field]
         else:
             formatted_source[field] = None
-    if group_yaml_ids is None:
-        formatted_source['group_ids'] = [group['id'] for group in source['groups']]
-    else:
-        formatted_source['group_ids'] = []
-        for group_id in source['group_ids']:
-            if group_id in group_yaml_ids.keys():
-                formatted_source['group_ids'].append(f"={group_yaml_ids[group_id]}")
+    formatted_source['group_ids'] = ["=public_group_id"]
     
     return formatted_source
 
@@ -494,7 +542,7 @@ def formattedPhot(photometry):
     
     return formatted_phot
 
-def formattedPhotRef(photometryRef, group_yaml_ids: dict = None, instrument_yaml_ids: dict = None):
+def formattedPhotRef(photometryRef, instrument_yaml_ids: dict = None):
     """
     Keep only the fields that are needed.
     """
@@ -505,11 +553,7 @@ def formattedPhotRef(photometryRef, group_yaml_ids: dict = None, instrument_yaml
         else:
             formatted_phot_ref[field] = None
 
-    if group_yaml_ids is not None:
-        formatted_phot_ref['group_ids'] = []
-        for group_id in photometryRef['group_ids']:
-            if group_id in group_yaml_ids.keys():
-                formatted_phot_ref['group_ids'].append(f"={group_yaml_ids[group_id]}")
+    formatted_phot_ref['group_ids'] = ["=public_group_id"]
 
     if instrument_yaml_ids is not None:
         formatted_phot_ref['instrument_id'] = f"={instrument_yaml_ids[photometryRef['instrument_id']]}"
@@ -533,54 +577,44 @@ def seperate_sources_from_phot(data: list, directory: str = None):
             List of photometry
     """
     instrument_ids_full_list = []
-    group_ids_full_list = []
     source_list_to_yaml = []
     photometry_list_to_yaml = []
-    # for each source, only keep the keys in the source_keys list
     for source in data:
         source_list_to_yaml.append(formattedSource(source))
-        group_ids_full_list.extend(formattedSource(source)['group_ids'])
-        group_ids_full_list = list(set(group_ids_full_list))
-        # seperate the photometry by instrument and groups
+        # seperate the photometry by instrument
         if len(source["photometry"]) > 0:
             photometry_dict = {}
             for phot in source["photometry"]:
                 instrument_id = phot['instrument_id']
-                group_ids = []
-                for group in phot['groups']:
-                    group_ids.append(group['id'])
-                group_ids.sort()
-                group_ids_full_list.extend(list(group_ids))
-                group_ids_full_list = list(set(group_ids_full_list))
                 if instrument_id not in photometry_dict.keys():
                     photometry_dict[instrument_id] = {
                         "instrument_name": phot['instrument_name'],
-                        "by_group": []
+                        "photometry": []
                     }
-
-                if not any(d['group_ids'] == group_ids for d in photometry_dict[instrument_id]['by_group']):
-                    photometry_dict[instrument_id]["by_group"].append({"group_ids": group_ids, "groups": [group['name'] for group in phot["groups"]], "photometry": [formattedPhot(phot)]})
-                else:
-                    for d in photometry_dict[instrument_id]["by_group"]:
-                        if d["group_ids"] == group_ids:
-                            d["photometry"].append(formattedPhot(phot))
-                            break
+                photometry_dict[instrument_id]["photometry"].append(formattedPhot(phot))
 
             for instrument in photometry_dict:
-                for by_group in photometry_dict[instrument]["by_group"]:
-                    by_group["photometry"].sort(key=lambda x: x["mjd"])
-                    filename = source['id'] + "_" + str(photometry_dict[instrument]['instrument_name']) + "_" + str(','.join([str(i) for i in by_group['group_ids']])) + ".csv"
+                    photometry_dict[instrument]["photometry"].sort(key=lambda x: x["mjd"])
+                    # remove duplicates. A duplicate is when there is the same mjd, mag, magerr
+                    temp_photometry = []
+                    for phot in photometry_dict[instrument]["photometry"]:
+                        if any(x["mjd"] == phot["mjd"] and x["mag"] == phot["mag"] and x["magerr"] == phot["magerr"] and x["limiting_mag"] == phot["limiting_mag"] and x["filter"] == phot["filter"] for x in temp_photometry):
+                            continue
+                        else:
+                            temp_photometry.append(phot)
+                    photometry_dict[instrument]["photometry"] = temp_photometry
+                    filename = source['id'] + "_" + str(photometry_dict[instrument]['instrument_name']) + ".csv"
                     # save file
                     with open(f"{directory}/photometry/{filename}", 'w') as csvfile:
                         writer = csv.writer(csvfile)
                         writer.writerow(photometry_fields)
-                        for phot in by_group["photometry"]:
+                        for phot in photometry_dict[instrument]["photometry"]:
                             writer.writerow([phot[field] for field in photometry_fields])
                     
                     photometry_list_to_yaml.append({
                         'obj_id': source['id'],
                         'instrument_id': instrument,
-                        'group_ids': by_group['group_ids'],
+                        'group_ids': ["=public_group_id"],
                         'file': "photometry/" + filename
                     })
 
@@ -588,7 +622,7 @@ def seperate_sources_from_phot(data: list, directory: str = None):
             instrument_ids_full_list = list(set(instrument_ids_full_list))
 
 
-    return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list, group_ids_full_list
+    return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list
         
 def dump(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False, directory: str = None):
     """
@@ -597,32 +631,43 @@ def dump(localizationDateobs: str = None, localizationName: str = None, startDat
 
     print("Fetching sources and photometry... Please wait")
     status, data = get_all_sources_and_phot(startDate, endDate, localizationDateobs, localizationName, numPerPage, url, token, whitelisted)
-
-    if status == 200 or status == 500 or status == 400:
+    status = 200
+    if status == 200 or status == 500:
         print("Found {} sources".format(len(data)))
         print("Formatting photometry...")
-        sources, photometry_ref, instrument_ids, group_ids = seperate_sources_from_phot(data, directory)
+        sources, photometry_ref, instrument_ids = seperate_sources_from_phot(data, directory)
         
         print("Fetching groups, instruments and telescopes from Skyportal...")
         
         status, instruments = get_instruments_from_ids(instrument_ids, url, token)
         telescope_ids = list(set([instrument['telescope_id'] for instrument in instruments]))
         status, telescopes = get_telescopes_from_ids(telescope_ids, url, token)
+
+        print("Fetching gcn notice from Skyportal...")
+        status, tags, notice = get_gcnevent_data(localizationDateobs, localizationName, url, token)
+        if status != 200:
+            print("Error getting gcn data")
+            return
+        gcn_event = {}
+        if notice is None:
+            skymap_data = get_skymap(localizationDateobs, localizationName, url, token)
+            if skymap_data is None:
+                print("Error getting skymap")
+                return
+            filename = f'{directory}/{localizationName}.fits'
+            import ligo.skymap.moc
+            #skymap_temp = ligo.skymap.moc.rasterize(skymap_data)
+            hp.fitsfunc.write_map(filename, skymap_data, overwrite=True, nest=False, column_names=['PROB']) # column_names=['UNIQ', 'PROBDENSITY', 'DISTMU', 'DISTSIGMA', 'DISTNORM']
+            gcn_event = {'dateobs': localizationDateobs, 'skymap': os.path.abspath(filename), 'tags': tags}
+        else:
+            # save the notice to a file
+            filename = f'{directory}/{localizationName}.txt'
+            with open(filename, 'w') as f:
+                f.write(notice)
+            gcn_event = {'xml': os.path.abspath(filename)}
+
         
-        status, groups = get_groups_from_ids(group_ids, url, token)
-        
-        print("Formatting sources, groups, instruments and telescopes...")
-        
-        new_groups = []
-        group_yaml_ids = {}
-        for group in groups:
-            if group['name'] == 'Sitewide Group':
-                group_yaml_ids[group["id"]] = "public_group_id"
-            else:
-                formatted_group = formattedGroup(group)
-                new_groups.append(formatted_group)
-                group_yaml_ids[group["id"]] = formatted_group["=id"]
-        groups = new_groups
+        print("Formatting sources, instruments and telescopes...")
 
         new_telescopes = []
         telescope_yaml_ids = {}
@@ -640,15 +685,15 @@ def dump(localizationDateobs: str = None, localizationName: str = None, startDat
             instrument_yaml_ids[instrument["id"]] = formatted_instrument["=id"]
         instruments = new_instruments
 
-        sources = [formattedSource(source, group_yaml_ids) for source in sources]
-        photometry_ref = [formattedPhotRef(phot_ref, group_yaml_ids, instrument_yaml_ids) for phot_ref in photometry_ref]
+        sources = [formattedSource(source) for source in sources]
+        photometry_ref = [formattedPhotRef(phot_ref, instrument_yaml_ids) for phot_ref in photometry_ref]
 
         data_to_yaml = {
-            "groups": groups,
             "telescope": telescopes,
             "instrument": instruments,
             "sources": sources,
-            "photometry": photometry_ref
+            "photometry": photometry_ref,
+            "gcn_event": [gcn_event]
         }
 
         print(f"Saving data to '{directory}/data.yaml'")
