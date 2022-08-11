@@ -4,6 +4,8 @@ import uuid
 import csv
 import yaml
 import requests
+import argparse
+
 group_fields = ['name']
 telescope_fields = ['name', 'nickname', 'lat', 'lon', 'elevation', 'diameter', 'robotic', 'skycam_link', 'weather_link']
 instrument_fields = ['name', 'type', 'band', 'telescope_id', 'filters', 'api_classname', 'api_classname_obsplan', 'treasuremap_id', 'sensitivity_data']
@@ -382,6 +384,8 @@ def get_photometry(source_id: str = None, format: str = 'mag', url: str = None, 
     data = []
     if photometry.status_code == 200:
         data = photometry.json()["data"]
+        if len(data) == 0:
+            print(f"No photometry found for source {source_id}")
     return photometry.status_code, data
 
 def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localizationDateobs: str = None, localizationName: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
@@ -416,7 +420,6 @@ def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localiz
     finished = False
     pageNumber = 1
     sources = []
-    print("Fetching sources and photometry... Please wait")
     while finished == False:
         status_code, data = get_sources(startDate, endDate, localizationDateobs, localizationName, numPerPage, pageNumber, url, token)
         if status_code == 200:
@@ -568,7 +571,7 @@ def seperate_sources_from_phot(data: list, directory: str = None):
                     by_group["photometry"].sort(key=lambda x: x["mjd"])
                     filename = source['id'] + "_" + str(photometry_dict[instrument]['instrument_name']) + "_" + str(','.join([str(i) for i in by_group['group_ids']])) + ".csv"
                     # save file
-                    with open("results/{}/photometry/".format(directory)+ filename, 'w') as csvfile:
+                    with open(f"{directory}/photometry/{filename}", 'w') as csvfile:
                         writer = csv.writer(csvfile)
                         writer.writerow(photometry_fields)
                         for phot in by_group["photometry"]:
@@ -587,47 +590,29 @@ def seperate_sources_from_phot(data: list, directory: str = None):
 
     return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list, group_ids_full_list
         
-def main():
+def dump(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False, directory: str = None):
     """
-    Main function
+    Dump the data to yaml files.
     """
-    directory = str(uuid.uuid1())
-    if not os.path.exists("results"):
-        os.makedirs("results")
-    if not os.path.exists("results/{}".format(directory)):
-        os.makedirs("results/{}".format(directory))
-    if not os.path.exists("results/{}/photometry".format(directory)):
-        os.makedirs("results/{}/photometry".format(directory))
-    
-    localizationDateobs, localizationName, startDate, endDate, numPerPage, whitelisted = None, None, None, None, 100, False
-    if 'localizationDateobs' in config:
-        localizationDateobs = config["localizationDateobs"]
-    if 'localizationNam' in config:
-        localizationName = config["localizationName"]
-    if 'startDate' in config:
-        startDate = config["startDate"]
-    if 'endDate' in config:
-        endDate = config["endDate"]
-    if 'numPerPage' in config:
-        numPerPage = config["numPerPage"]
-    if 'whitelisted' in config:
-        whitelisted = config["whitelisted"]
-    url = config["skyportal_url"]
-    token = config["skyportal_token"]
-    print("Fetching sources and photometry from Skyportal")
+
+    print("Fetching sources and photometry... Please wait")
     status, data = get_all_sources_and_phot(startDate, endDate, localizationDateobs, localizationName, numPerPage, url, token, whitelisted)
 
     if status == 200 or status == 500 or status == 400:
         print("Found {} sources".format(len(data)))
         print("Formatting photometry...")
         sources, photometry_ref, instrument_ids, group_ids = seperate_sources_from_phot(data, directory)
+        
         print("Fetching groups, instruments and telescopes from Skyportal...")
+        
         status, instruments = get_instruments_from_ids(instrument_ids, url, token)
         telescope_ids = list(set([instrument['telescope_id'] for instrument in instruments]))
         status, telescopes = get_telescopes_from_ids(telescope_ids, url, token)
+        
         status, groups = get_groups_from_ids(group_ids, url, token)
+        
         print("Formatting sources, groups, instruments and telescopes...")
-        #reformat the groups, instruments, and telescopes
+        
         new_groups = []
         group_yaml_ids = {}
         for group in groups:
@@ -637,12 +622,6 @@ def main():
                 formatted_group = formattedGroup(group)
                 new_groups.append(formatted_group)
                 group_yaml_ids[group["id"]] = formatted_group["=id"]
-
-        print('\n')
-        print(groups)
-        print('\n')
-        print(new_groups)
-        print('\n')
         groups = new_groups
 
         new_telescopes = []
@@ -664,7 +643,6 @@ def main():
         sources = [formattedSource(source, group_yaml_ids) for source in sources]
         photometry_ref = [formattedPhotRef(phot_ref, group_yaml_ids, instrument_yaml_ids) for phot_ref in photometry_ref]
 
-        # save sources and photometry in one yaml file
         data_to_yaml = {
             "groups": groups,
             "telescope": telescopes,
@@ -672,9 +650,10 @@ def main():
             "sources": sources,
             "photometry": photometry_ref
         }
-        print("Saving data to results/{}/data.yaml".format(directory))
-        dict_to_yaml(data_to_yaml, "results/{}/data.yaml".format(directory))
-        # also save a separate yaml file containing the params used to get the sources
+
+        print(f"Saving data to '{directory}/data.yaml'")
+        dict_to_yaml(data_to_yaml, f"{directory}/data.yaml")
+
         params = {
             "localizationDateobs": localizationDateobs,
             "localizationName": localizationName,
@@ -685,7 +664,85 @@ def main():
             "token": token
 
         }
-        dict_to_yaml(params, 'results/'+directory+'/config_used.yaml')
-        print("Done!")
+        dict_to_yaml(params, f"{directory}/config_used.yaml")
+        print("Done! Now, you can load the results in a Skyportal instance.")
     
-main()
+def main():
+    parser = argparse.ArgumentParser(description="Dump SkyPortal sources found in a GCN Event, and their photometry.")
+    parser.add_argument("--localizationDateobs", help="Dateobs of the localization/event.", type=str)
+    parser.add_argument("--localizationName", help="Name of the localization.", type=str)
+    parser.add_argument("--startDate", help="First detection of the source after this date.", type=str)
+    parser.add_argument("--endDate", help="Last detection of the source before this date.", type=str)
+    parser.add_argument("--numPerPage", help="Number of sources to query at once. Default is 100.", type=int)
+    parser.add_argument("--url", help="The url of the Skyportal instance.", type=str)
+    parser.add_argument("--token", help="The token of the Skyportal instance.", type=str)
+    parser.add_argument("--whitelisted", help="IP whitelisted on SkyPortal, no api calls limitation.", action="store_true")
+    parser.add_argument("--use_config", help="Use config file to get parameters. Use it if you want to use the config file rather than providing parameters in the command line.", action="store_true")
+    parser.add_argument("--directory", help="Directory to save results to. If not provided, a random directory name in results/ will be used.", type=str)
+    args = parser.parse_args()
+
+    use_config = args.use_config
+    if use_config is True:
+        try:
+            localizationDateobs = config["localizationDateobs"]
+            localizationName = config["localizationName"]
+            startDate = config["startDate"]
+            endDate = config["endDate"]
+            numPerPage = config["numPerPage"]
+            whitelisted = config["whitelisted"]
+            url = config["skyportal_url"]
+            token = config["skyportal_token"]
+        except KeyError as e:
+            print("Error: {} not found in config file.".format(e))
+            return
+    else:
+        localizationDateobs = args.localizationDateobs
+        localizationName = args.localizationName
+        startDate = args.startDate
+        endDate = args.endDate
+        numPerPage = args.numPerPage
+        whitelisted = args.whitelisted
+        url = args.url
+        token = args.token
+
+    missing_params = []
+    if localizationDateobs is None:
+        missing_params.append("localizationDateobs")
+    if localizationName is None:
+        missing_params.append("localizationName")
+    if startDate is None:
+        missing_params.append("startDate")
+    if endDate is None:
+        missing_params.append("endDate")
+    if url is None:
+        missing_params.append("url")
+    if token is None:
+        missing_params.append("token")
+
+    if len(missing_params) > 0:
+        print("Error: the following parameters are missing: {}".format(', '.join(missing_params)))
+        return
+
+    if args.directory is None:
+        directory = f"results/{localizationDateobs}"
+        counter = 1
+        while os.path.exists(directory):
+            directory = f"results/{localizationDateobs}_{counter}"
+            counter += 1
+        if not os.path.exists("results"):
+            os.makedirs("results")
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    else:
+        directory = args.directory
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    if not os.path.exists("{}/photometry".format(directory)):
+        os.makedirs("{}/photometry".format(directory))
+    
+    dump(localizationDateobs, localizationName, startDate, endDate, numPerPage, url, token, whitelisted, directory)
+
+if __name__ == "__main__":
+    main()
