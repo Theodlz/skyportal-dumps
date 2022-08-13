@@ -360,6 +360,109 @@ def get_groups_from_ids(group_ids: list = None, url: str = None, token: str = No
     
     return status, groups
 
+def get_all_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
+    """
+    Get all gcn event ids from skyportal using its API
+
+    Arguments
+    ----------
+        startDate : str
+            Start date of the observation
+        end_date : str
+            End date of the observation
+        tag : str
+            Tag to match gcn event to
+        numPerPage : int
+            Number of sources per page
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of source ids
+    """
+    request_counter = 0
+    finished = False
+    pageNumber = 1
+    gcnevents = [] 
+    while finished == False:
+        status_code, data = get_gcnevents(startDate, endDate, tag, numPerPage, pageNumber, url, token)
+        if status_code == 200:
+            if len(data) < numPerPage:
+                finished = True
+            if len(gcnevents) == 0:
+                gcnevents = data
+                pageNumber += 1
+            else:
+                gcnevents.extend(data) 
+                pageNumber += 1
+        elif status_code == 500:
+            finished = True
+        else:
+            finished = True
+            print("Error getting sources") 
+
+        if whitelisted is False:
+            request_counter += 1
+            if request_counter > 10:
+                time.sleep(1) 
+                request_counter = 0
+
+    return status_code, gcnevents
+
+def get_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, numPerPage: int = 100, pageNumber: int = 1, url: str = None, token: str = None):
+    """
+    Get all gcn event ids from skyportal using its API
+
+    Arguments
+    ----------
+        startDate : str
+            Start date of the observation
+        end_date : str
+            End date of the observation
+        tag : str
+            Tag to match gcn event to
+        numPerPage : int
+            Number of sources per page
+        pageNumber : int
+            Page to get
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of source ids
+    """
+
+    params = {
+        "sortBy": "dateobs",
+        "sortOrder": "asc",
+    }
+    if numPerPage is not None:
+        params["numPerPage"] = numPerPage
+    if pageNumber is not None:
+        params["pageNumber"] = pageNumber
+    if startDate is not None:
+        params["startDate"] = startDate
+    if endDate is not None:
+        params["endDate"] = endDate
+
+    gcnevents = api("GET", f"{url}/api/gcn_event", params=params, token=token)
+    data = [] 
+    if gcnevents.status_code == 200:
+        data = gcnevents.json()["data"]["events"]
+    return gcnevents.status_code, data
+
 def get_sources(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numberDetections: int = 2, numPerPage: int = 100, pageNumber: int = 1, url: str = None, token: str = None):
     """
     Get all source ids from skyportal using its API
