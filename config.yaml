@@ -1,9 +1,12 @@
-localizationDateobs: '2018-01-16T00:36:53'
-localizationName: '214.74000_28.14000_11.19000'
-startDate: '2018-01-11 00:36:53'
-endDate: '2018-01-29 00:36:53'
+localizationDateobs: '2020-08-26T04:29:53'
+localizationName: 'glg_healpix_all_bn200826187.fits'
+startDate: '2020-08-26 04:29:53'
+endDate: '2020-09-02 04:29:53'
+localizationCumprob: 0.2
+numberDetections: 2
 numPerPage: 100
-skyportal_token: 2c143df8-cc88-44a6-a288-81e4803a8b96
-skyportal_url: http://localhost:5000
+skyportal_token: null
+skyportal_url: null
 whitelisted: true
+
   

@@ -360,7 +360,7 @@ def get_groups_from_ids(group_ids: list = None, url: str = None, token: str = No
     
     return status, groups
 
-def get_sources(startDate: str = None, endDate: str = None, localizationDateobs: str = None, localizationName: str = None, numPerPage: int = None, pageNumber: int = None, url: str = None, token: str = None):
+def get_sources(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numberDetections: int = 2, numPerPage: int = 100, pageNumber: int = 1, url: str = None, token: str = None):
     """
     Get all source ids from skyportal using its API
 
@@ -404,6 +404,10 @@ def get_sources(startDate: str = None, endDate: str = None, localizationDateobs:
         params["startDate"] = startDate
     if endDate is not None:
         params["endDate"] = endDate
+    if localizationCumprob is not None:
+        params["localizationCumprob"] = localizationCumprob
+    if numberDetections is not None:
+        params["numberDetections"] = numberDetections
     if localizationDateobs is not None:
         params["localizationDateobs"] = localizationDateobs
     if localizationName is not None:
@@ -442,7 +446,7 @@ def get_photometry(source_id: str = None, format: str = 'mag', url: str = None, 
             print(f"No photometry found for source {source_id}")
     return photometry.status_code, data
 
-def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localizationDateobs: str = None, localizationName: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
+def get_all_sources_and_phot(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numberDetections: int = 2, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
     """
     Get all source ids from skyportal using its API
 
@@ -475,7 +479,7 @@ def get_all_sources_and_phot(startDate: str = None, endDate: str = None, localiz
     pageNumber = 1
     sources = []
     while finished == False:
-        status_code, data = get_sources(startDate, endDate, localizationDateobs, localizationName, numPerPage, pageNumber, url, token)
+        status_code, data = get_sources(localizationDateobs, localizationName, startDate, endDate, localizationCumprob, numberDetections, numPerPage, pageNumber, url, token)
         if status_code == 200:
             if len(data) < numPerPage:
                 finished = True
@@ -624,13 +628,13 @@ def seperate_sources_from_phot(data: list, directory: str = None):
 
     return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list
         
-def dump(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False, directory: str = None):
+def dump(localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numberDetections: int = 2, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False, directory: str = None):
     """
     Dump the data to yaml files.
     """
 
     print("Fetching sources and photometry... Please wait")
-    status, data = get_all_sources_and_phot(startDate, endDate, localizationDateobs, localizationName, numPerPage, url, token, whitelisted)
+    status, data = get_all_sources_and_phot(localizationDateobs, localizationName, startDate, endDate, localizationCumprob, numberDetections, numPerPage, url, token, whitelisted)
     status = 200
     if status == 200 or status == 500:
         print("Found {} sources".format(len(data)))
@@ -718,7 +722,9 @@ def main():
     parser.add_argument("--localizationName", help="Name of the localization.", type=str)
     parser.add_argument("--startDate", help="First detection of the source after this date.", type=str)
     parser.add_argument("--endDate", help="Last detection of the source before this date.", type=str)
-    parser.add_argument("--numPerPage", help="Number of sources to query at once. Default is 100.", type=int)
+    parser.add_argument('--localizationCumprob', help="Cumulative probability. To keep sources in the Nth most probable region. Default is 0.95", type=float, default=0.95)
+    parser.add_argument("--numberDetections", help="Minimum number of detections for the sources. Default is 2.", type=int, default=2)
+    parser.add_argument("--numPerPage", help="Number of sources to query at once. Default is 100.", type=int, default=100)
     parser.add_argument("--url", help="The url of the Skyportal instance.", type=str)
     parser.add_argument("--token", help="The token of the Skyportal instance.", type=str)
     parser.add_argument("--whitelisted", help="IP whitelisted on SkyPortal, no api calls limitation.", action="store_true")
@@ -733,6 +739,8 @@ def main():
             localizationName = config["localizationName"]
             startDate = config["startDate"]
             endDate = config["endDate"]
+            localizationCumprob= config["localizationCumprob"]
+            numberDetections = config["numberDetections"]
             numPerPage = config["numPerPage"]
             whitelisted = config["whitelisted"]
             url = config["skyportal_url"]
@@ -745,6 +753,8 @@ def main():
         localizationName = args.localizationName
         startDate = args.startDate
         endDate = args.endDate
+        localizationCumprob = args.localizationCumprob
+        numberDetections = args.numberDetections
         numPerPage = args.numPerPage
         whitelisted = args.whitelisted
         url = args.url
@@ -759,6 +769,10 @@ def main():
         missing_params.append("startDate")
     if endDate is None:
         missing_params.append("endDate")
+    if localizationCumprob is None:
+        missing_params.append("localizationCumprob")
+    if numberDetections is None:
+        missing_params.append("numberDetections")
     if url is None:
         missing_params.append("url")
     if token is None:
@@ -787,7 +801,7 @@ def main():
     if not os.path.exists("{}/photometry".format(directory)):
         os.makedirs("{}/photometry".format(directory))
     
-    dump(localizationDateobs, localizationName, startDate, endDate, numPerPage, url, token, whitelisted, directory)
+    dump(localizationDateobs, localizationName, startDate, endDate, localizationCumprob, numberDetections, numPerPage, url, token, whitelisted, directory)
 
 if __name__ == "__main__":
     main()
