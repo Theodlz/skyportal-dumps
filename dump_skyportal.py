@@ -257,6 +257,178 @@ def get_telescopes_from_ids(telescope_ids: list = None, url: str = None, token: 
     
     return status, telescopes
 
+def get_all_observations(telescopeName: str = None, instrumentName: str = None, localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numPerPage: int = 1000, pageNumber: int = 1, returnStatistics = False,  url: str = None, token: str = None, whitelisted: bool = False):
+    """
+    Get all observation ids from skyportal using its API
+
+    Arguments
+    ----------
+        telescopeName : str
+            Telescope name
+        instrumentName : str
+            Instrument name
+        startDate : str
+            Start date of the observation
+        end_date : str
+            End date of the observation
+        localizationDateobs : str
+            Dateobs of the localization
+        localizationName : str
+            Name of the localization
+        returnStatistics : bool
+            Boolean indicating whether to include integrated probability and area. Defaults to false.
+        numPerPage : int
+            Number of sources per page
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of observation ids
+    """
+    request_counter = 0
+    finished = False
+    pageNumber = 1
+    observations = [] 
+    while finished == False:
+        status_code, data = get_observations(telescopeName = telescopeName, instrumentName = instrumentName, localizationDateobs = localizationDateobs , localizationName = localizationName, startDate = startDate, endDate = endDate, localizationCumprob = localizationCumprob, returnStatistics = returnStatistics, numPerPage = numPerPage, pageNumber = pageNumber, url = url, token = token)
+        if status_code == 200:
+            if len(data) < numPerPage:
+                finished = True
+            if len(observations) == 0:
+                observations = data
+                pageNumber += 1
+            else:
+                observations.extend(data)
+                pageNumber += 1
+        elif status_code == 500:
+            finished = True
+        else:
+            finished = True
+            print("Error getting observations")
+
+        if whitelisted is False:
+            request_counter += 1
+            if request_counter > 10:
+                time.sleep(1) 
+                request_counter = 0
+
+    return status_code, observations
+
+def get_observations(telescopeName: str = None, instrumentName: str = None, localizationDateobs: str = None, localizationName: str = None, startDate: str = None, endDate: str = None, localizationCumprob: float = 0.95, numPerPage: int = 1000, pageNumber: int = 1, returnStatistics = False,  url: str = None, token: str = None):
+    """
+    Get all source ids from skyportal using its API
+
+    Arguments
+    ----------
+        telescopeName : str
+            Telescope name
+        instrumentName : str
+            Instrument name
+        startDate : str
+            Start date of the observation
+        endDate : str
+            End date of the observation
+        localizationDateobs : str
+            Dateobs of the localization
+        localizationName : str
+            Name of the localization
+        returnStatistics : bool
+            Boolean indicating whether to include integrated probability and area. Defaults to false.
+        numPerPage : int
+            Number of sources per page
+        pageNumber : int
+            Page to get
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of observation ids
+    """
+
+    params = {'returnStatistics': returnStatistics}
+
+    if numPerPage is not None:
+        params["numPerPage"] = numPerPage
+    if pageNumber is not None:
+        params["pageNumber"] = pageNumber
+    if startDate is not None:
+        params["startDate"] = startDate
+    if endDate is not None:
+        params["endDate"] = endDate
+    if localizationCumprob is not None:
+        params["localizationCumprob"] = localizationCumprob
+    if localizationDateobs is not None:
+        params["localizationDateobs"] = localizationDateobs
+    if localizationName is not None:
+        params["localizationName"] = localizationName
+    if telescopeName is not None:
+        params["telescopeName"] = telescopeName
+    if instrumentName is not None:
+        params["instrumentName"] = instrumentName
+
+    observations = api("GET", f"{url}/api/observation", params=params, token=token) 
+    data = [] 
+    if observations.status_code == 200:
+        data = observations.json()["data"]
+    return observations.status_code, data
+
+def retrieve_observations(data: dict = {}, url: str = None, token: str = None):
+    """
+    Retrieve observations from an external API
+
+    Arguments
+    ----------
+        params : dict
+            Parameter dictionary for request
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of allocations
+    """
+    status_code = api("POST", f"{url}/api/observation/external_api", token=token, data=data)
+    return status_code
+
+def get_allocations(url: str = None, token: str = None):
+    """
+    Get all allocations from skyportal using its API
+
+    Arguments
+    ----------
+        url : str
+            Skyportal url
+        token : str
+            Skyportal token
+    Returns
+    ----------
+        status_code : int
+            HTTP status code
+        data : list
+            List of allocations
+    """
+    allocations = api("GET", f"{url}/api/allocation", token=token)
+    data = []
+    if allocations.status_code == 200:
+        data = allocations.json()["data"]
+    return allocations.status_code, data
+
 def get_instruments(url: str = None, token: str = None):
     """
     Get all instruments from skyportal using its API
