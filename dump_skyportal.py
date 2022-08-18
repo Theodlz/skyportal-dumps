@@ -532,7 +532,7 @@ def get_groups_from_ids(group_ids: list = None, url: str = None, token: str = No
     
     return status, groups
 
-def get_all_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
+def get_all_gcnevents(startDate: str = None, endDate: str = None, tagKeep: str = None, tagRemove: str = None, numPerPage: int = 100, url: str = None, token: str = None, whitelisted: bool = False):
     """
     Get all gcn event ids from skyportal using its API
 
@@ -542,8 +542,10 @@ def get_all_gcnevents(startDate: str = None, endDate: str = None, tag: str = Non
             Start date of the observation
         end_date : str
             End date of the observation
-        tag : str
+        tagKeep : str
             Tag to match gcn event to
+        tagRemove : str
+            Tag to filter out
         numPerPage : int
             Number of sources per page
         url : str
@@ -563,7 +565,7 @@ def get_all_gcnevents(startDate: str = None, endDate: str = None, tag: str = Non
     pageNumber = 1
     gcnevents = [] 
     while finished == False:
-        status_code, data = get_gcnevents(startDate, endDate, tag, numPerPage, pageNumber, url, token)
+        status_code, data = get_gcnevents(startDate, endDate, tagKeep, tagRemove, numPerPage, pageNumber, url, token)
         if status_code == 200:
             if len(data) < numPerPage:
                 finished = True
@@ -587,7 +589,7 @@ def get_all_gcnevents(startDate: str = None, endDate: str = None, tag: str = Non
 
     return status_code, gcnevents
 
-def get_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, numPerPage: int = 100, pageNumber: int = 1, url: str = None, token: str = None):
+def get_gcnevents(startDate: str = None, endDate: str = None, tagKeep: str = None, tagRemove: str = None, numPerPage: int = 100, pageNumber: int = 1, url: str = None, token: str = None):
     """
     Get all gcn event ids from skyportal using its API
 
@@ -597,8 +599,10 @@ def get_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, n
             Start date of the observation
         end_date : str
             End date of the observation
-        tag : str
+        tagKeep : str
             Tag to match gcn event to
+        tagRemove : str
+            Tag to filter out
         numPerPage : int
             Number of sources per page
         pageNumber : int
@@ -628,6 +632,10 @@ def get_gcnevents(startDate: str = None, endDate: str = None, tag: str = None, n
         params["startDate"] = startDate
     if endDate is not None:
         params["endDate"] = endDate
+    if tagKeep is not None:
+        params["tagKeep"] = tagKeep
+    if tagRemove is not None:
+        params["tagRemove"] = tagRemove
 
     gcnevents = api("GET", f"{url}/api/gcn_event", params=params, token=token)
     data = [] 
