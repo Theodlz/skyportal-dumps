@@ -69,8 +69,6 @@ def dict_to_yaml(dict, file_path):
         except yaml.YAMLError as exc:
             raise exc
 
-config = yaml_to_dict("config.yaml")
-
 def api(
     method,
     endpoint,
@@ -155,6 +153,44 @@ def formattedGroup(group):
     formatted_group['=id'] = group['name'].strip()
 
     return formatted_group
+
+def get_all_analysis_services(url: str = None, token: str = None):
+    analysis_services = api("GET", f"{url}/api/analysis_service", token=token)
+
+    data = []
+    if analysis_services.status_code == 200:
+        data = analysis_services.json()["data"]
+    return analysis_services.status_code, data
+
+def get_analysis_service(name: str = None, url: str = None, token: str = None):
+    status, analysis_services = get_all_analysis_services(url=url, token=token)
+    data = {}
+    if status == 200:
+        for analysis_service in analysis_services:
+            if analysis_service["name"] == name:
+                data = analysis_service
+                break
+    return status, data
+
+def get_analysis_from_source(source_id: str = None, url: str = None, token: str = None):
+    analysis = api("GET", f"{url}/api/obj/analysis?objID={source_id}", token=token)
+    data = []
+    if analysis.status_code == 200:
+        data = analysis.json()["data"]
+    return analysis.status_code, data
+
+def start_nmma_analysis(source_id: str = None, analysis_service_id: int = None, url: str = None, token: str = None):
+    params= {
+        "analysis_parameters": {
+            "source": "Me2017"
+        },
+        "group_ids": [2],
+        "show_corner": True,
+        "show_parameters": True,
+        "show_plots": True
+    }
+    analysis = api("POST", f"{url}/api/obj/{source_id}/analysis/{analysis_service_id}", data=params, token=token)
+    return analysis.status_code
 
 def get_gcnevent(localizationDateobs: str = None, url: str = None, token: str = None):
     gcn_event = api("GET", f"{url}/api/gcn_event/{localizationDateobs}", token=token)
@@ -1018,6 +1054,7 @@ def main():
     use_config = args.use_config
     if use_config is True:
         try:
+            config = yaml_to_dict("config.yaml")
             localizationDateobs = config["localizationDateobs"]
             localizationName = config["localizationName"]
             startDate = config["startDate"]
