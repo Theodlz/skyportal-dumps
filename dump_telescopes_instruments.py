@@ -5,7 +5,7 @@ def dump(url: str = None, token: str = None, whitelisted: bool = False, director
     Dump the data to yaml files.
     """
 
-    print("Fetching sources and photometry... Please wait")
+    print("Fetching telescopes and instruments... Please wait")
     status = 200
     if status == 200 or status == 500:
         
@@ -42,7 +42,7 @@ def dump(url: str = None, token: str = None, whitelisted: bool = False, director
         print("Done! Now, you can load the results in a Skyportal instance.")
     
 def main():
-    parser = argparse.ArgumentParser(description="Dump SkyPortal sources found in a GCN Event, and their photometry.")
+    parser = argparse.ArgumentParser(description="Dump SkyPortal telescopes and their instruments.")
     parser.add_argument("--url", help="The url of the Skyportal instance.", type=str)
     parser.add_argument("--token", help="The token of the Skyportal instance.", type=str)
     parser.add_argument("--whitelisted", help="IP whitelisted on SkyPortal, no api calls limitation.", action="store_true")
@@ -53,6 +53,7 @@ def main():
     use_config = args.use_config
     if use_config is True:
         try:
+            config = yaml_to_dict("config.yaml")
             whitelisted = config["whitelisted"]
             url = config["skyportal_url"]
             token = config["skyportal_token"]
@@ -91,8 +92,6 @@ def main():
             os.makedirs(directory)
     if not os.path.exists(directory):
         os.makedirs(directory)
-    if not os.path.exists("{}/photometry".format(directory)):
-        os.makedirs("{}/photometry".format(directory))
     
     dump(url, token, whitelisted, directory)
 

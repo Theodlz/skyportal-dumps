@@ -105,6 +105,7 @@ def main():
     use_config = args.use_config
     if use_config is True:
         try:
+            config = yaml_to_dict("config.yaml")
             localizationDateobs = config["localizationDateobs"]
             localizationName = config["localizationName"]
             startDate = config["startDate"]

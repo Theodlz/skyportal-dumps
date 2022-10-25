@@ -16,6 +16,7 @@ instrument_fields = ['name', 'type', 'band', 'telescope_id', 'filters', 'api_cla
 source_fields = ['id', 'ra', 'dec', 'origin', 'alias', 'group_ids', 'redshift']
 photometry_fields = ['mjd', 'filter', 'mag', 'magerr', 'magsys', 'limiting_mag', 'ra', 'dec', 'ra_unc', 'dec_unc', 'origin']
 photometry_ref_fields = ['obj_id', 'instrument_id', 'group_ids', 'file']
+followups_fields = ['last_modified_by_id', 'obj_id', 'payload', 'status', 'allocation_id', 'created_at', 'id', 'modified', 'requester_id']
 
 class MyDumper(yaml.SafeDumper):
     def write_line_break(self, data=None):
@@ -948,6 +949,17 @@ def seperate_sources_from_phot(data: list, directory: str = None):
 
     return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list
 
+def formattedFollowupRequest(followupRequest):
+    """
+    Keep only the fields that are needed.
+    """
+    formatted_followup = {}
+    for field in followups_fields:
+        if field in followupRequest:
+            formatted_followup[field] = followupRequest[field]
+    
+    return formatted_followup
+
 def get_followup_requests(instrument_id: int = None, source_id: str = None, startDate: str = None, endDate: str = None, status: str = None, observationStartDate: str = None, observationEndDate: str = None, output_format: str = None, pageNumber: int = 1, numPerPage: int = 100, url: str = None, token: str = None):
     """
     Get the followup requests for a source.
@@ -985,9 +997,14 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     response = requests.get(endpoint, params=params, headers=headers)
     status = response.status_code
     if status == 200:
-        return status, [] if response.json()["data"] is None else response.json()["data"]
+        if instrument_id:
+            # retrieve the response, which is a pdf file
+            filename = f"followup_requests_{instrument_id}.pdf"
+            return status, filename, response.content
+        else:
+            return status, [] if response.json()["data"] is None else response.json()["data"], None
     else:
-        return status, None
+        return status, None, None
 
 def get_all_followup_requests(instrument_id: int = None, source_id: str = None, startDate: str = None, endDate: str = None, status: str = None, observationStartDate: str = None, observationEndDate: str = None, output_format: str = None, url: str = None, token: str = None):
     """
@@ -997,17 +1014,26 @@ def get_all_followup_requests(instrument_id: int = None, source_id: str = None, 
     pageNumber = 1
     numPerPage = 100
     all_followups = []
-    status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-    if status != 200:
-        return status, None, None
+    if instrument_id is not None:
+        status, filename, file_data = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+        if status == 200:
+            return status, filename, file_data
+        else:
+            return status, None, None
     else:
-        all_followups = followups['followup_requests']
-        totalMatches = followups['totalMatches']
-        while int(pageNumber*numPerPage) < int(totalMatches):
-            pageNumber += 1
-            status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-            if status != 200:
-                return status, None, None
-            else:
-                all_followups.extend(followups['followup_requests'])
-        return status, all_followups, totalMatches
+        status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+        if status != 200:
+            return status, None, None
+        else:
+            all_followups = followups['followup_requests']
+            totalMatches = followups['totalMatches']
+            while int(pageNumber*numPerPage) < int(totalMatches):
+                pageNumber += 1
+                status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+                if status != 200:
+                    return status, None, None
+                else:
+                    all_followups.extend(followups['followup_requests'])
+
+            all_followups = [formattedFollowupRequest(followup) for followup in all_followups]
+            return status, all_followups, totalMatches
