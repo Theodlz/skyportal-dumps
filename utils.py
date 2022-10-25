@@ -999,7 +999,7 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     if status == 200:
         if instrument_id:
             # retrieve the response, which is a pdf file
-            filename = f"followup_requests_{instrument_id}.pdf"
+            filename = f"followup_requests_{instrument_id}.csv"
             return status, filename, response.content
         else:
             return status, [] if response.json()["data"] is None else response.json()["data"], None

@@ -5,7 +5,7 @@ def dump(instrumentId=None, startDate=None, endDate=None, numPerPage=None, url=N
         print(f"Fetching follow-up requests schedule (as csv) for instrument_id: {instrumentId}... Please wait")
         status, filename, file_data = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
         if status == 200:
-            with open("{}/{}.csv".format(directory, filename), "wb") as f:
+            with open("{}/{}".format(directory, filename), "wb") as f:
                 f.write(file_data)
         else:
             print("Error: no follow-up requests found using these parameters")
