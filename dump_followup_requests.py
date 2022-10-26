@@ -7,13 +7,28 @@ def dump(instrumentId=None, startDate=None, endDate=None, numPerPage=None, url=N
     else:
         print(f"Fetching follow-up requests... Please wait")
     status, followups, totalMatches = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
-    if status == 200:
-        data_to_yaml = {
-        "followup_requests": followups,
-        }
 
-        print(f"Saving data to '{directory}/data.yaml'")
-        dict_to_yaml(data_to_yaml, f"{directory}/data.yaml")
+    objs = []
+    for followup in followups:
+        if not any(obj["id"] == followup["obj_id"] for obj in objs):
+            objs.append(followup['obj'])
+    sources = [formattedSource(obj) for obj in objs]
+
+    followups = [formattedFollowupRequest(followups[i], i) for i in range(len(followups))]
+    if status != 200:
+        print("Error getting follow-up requests")
+        return
+    
+    data_to_yaml = {
+    "groups": [public_group],
+    "user": [public_user],
+    "sources": sources,
+    "followup_request": followups,
+
+    }
+
+    print(f"Saving data to '{directory}/data.yaml'")
+    dict_to_yaml(data_to_yaml, f"{directory}/data.yaml")
     
 
 def main():
@@ -80,8 +95,6 @@ def main():
         directory = args.directory
         if not os.path.exists(directory):
             os.makedirs(directory)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
     
     dump(instrumentId, startDate, endDate, numPerPage, url, token, whitelisted, directory)
 

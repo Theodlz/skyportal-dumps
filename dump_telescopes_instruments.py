@@ -15,8 +15,18 @@ def dump(url: str = None, token: str = None, whitelisted: bool = False, director
 
         status, telescopes = get_telescopes(url, token)
 
+        all_allocations = []
+
         new_telescopes = []
         telescope_yaml_ids = {}
+
+        # first remove duplicates (i.e telescopes with the same id)
+        temp_telescopes = []
+        for telescope in telescopes:
+            if not any(t["id"] == telescope["id"] for t in temp_telescopes):
+                temp_telescopes.append(telescope)
+        telescopes = temp_telescopes
+
         for telescope in telescopes:
             formatted_telescope = formattedTelescope(telescope)
             new_telescopes.append(formatted_telescope)
@@ -25,15 +35,36 @@ def dump(url: str = None, token: str = None, whitelisted: bool = False, director
             
         new_instruments = []
         instrument_yaml_ids = {}
+
+        # first remove duplicates (i.e instruments with the same id)
+        temp_instruments = []
         for instrument in instruments:
+            if not any(i["id"] == instrument["id"] for i in temp_instruments):
+                temp_instruments.append(instrument)
+        instruments = temp_instruments
+
+        for i in range(len(instruments)):
+            instrument = instruments[i]
             formatted_instrument = formattedInstrument(instrument, telescope_yaml_ids)
             new_instruments.append(formatted_instrument)
             instrument_yaml_ids[instrument["id"]] = formatted_instrument["=id"]
+            status, allocations = get_allocations(instrument['id'], url, token)
+            if status == 200:
+                all_allocations.extend(allocations)
+            if not whitelisted and i % 10 == 0:
+                print("Fetching allocations... Please wait")
+                time.sleep(1)
+
+        all_allocations = [formattedAllocation(allocation, instrument_yaml_ids) for allocation in all_allocations]
+
         instruments = new_instruments
 
         data_to_yaml = {
+            "groups": [public_group],
+            "user": [public_user],
             "telescope": telescopes,
             "instrument": instruments,
+            "allocation": all_allocations
         }
 
         print(f"Saving data to '{directory}/data.yaml'")
@@ -90,8 +121,6 @@ def main():
         directory = args.directory
         if not os.path.exists(directory):
             os.makedirs(directory)
-    if not os.path.exists(directory):
-        os.makedirs(directory)
     
     dump(url, token, whitelisted, directory)
 

@@ -63,6 +63,8 @@ def dump(localizationDateobs: str = None, localizationName: str = None, startDat
         photometry_ref = [formattedPhotRef(phot_ref, instrument_yaml_ids) for phot_ref in photometry_ref]
 
         data_to_yaml = {
+            "groups": [public_group],
+            "user": [public_user],
             "telescope": telescopes,
             "instrument": instruments,
             "sources": sources,
