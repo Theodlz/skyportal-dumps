@@ -967,13 +967,7 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     Get the followup requests for a source.
     """
 
-    endpoint = f"{url}/api/followup_request"
-
-    if instrument_id is not None:
-        endpoint += f"/schedule/{instrument_id}"
-        params = {}
-    else:
-        params = {
+    params = {
             "pageNumber": pageNumber,
             "numPerPage": numPerPage,
         }
@@ -981,32 +975,22 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     if output_format not in [None, 'png', 'pdf', 'csv']:
         raise ValueError("If you specify an output format, it must be one of: 'png', 'pdf', 'csv'")
     
-
+    if instrument_id is not None:
+        params["instrumentID"] = instrument_id
     if source_id is not None:
-        params["source_id"] = source_id
+        params["sourceID"] = source_id
     if startDate is not None:
         params["startDate"] = startDate
     if endDate is not None:
         params["endDate"] = endDate
     if status is not None:
         params["status"] = status
-    if observationStartDate is not None:
-        params["observationStartDate"] = observationStartDate
-    if observationEndDate is not None:
-        params["observationEndDate"] = observationEndDate
-    if output_format is not None:
-        params["output_format"] = output_format
 
     headers = {'Authorization': f'token {token}'}
-    response = requests.get(endpoint, params=params, headers=headers)
+    response = requests.get(f"{url}/api/followup_request", params=params, headers=headers)
     status = response.status_code
     if status == 200:
-        if instrument_id:
-            df = pd.read_csv(io.BytesIO(response.content), index_col=0)
-            df_dict = df.to_dict(orient='records')
-            return status, df_dict
-        else:
-            return status, [] if response.json()["data"] is None else response.json()["data"]
+        return status, [] if response.json()["data"] is None else response.json()["data"]
     else:
         return status, None
 
@@ -1022,7 +1006,7 @@ def get_all_followup_requests(instrument_id: int = None, source_id: str = None, 
     status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
     if status != 200:
         return status, None, None
-    elif instrument_id is None:
+    else:
         all_followups = followups['followup_requests']
         totalMatches = followups['totalMatches']
         while int(pageNumber*numPerPage) < int(totalMatches):
@@ -1033,10 +1017,8 @@ def get_all_followup_requests(instrument_id: int = None, source_id: str = None, 
             else:
                 all_followups.extend(followups['followup_requests'])
 
-            all_followups = [formattedFollowupRequest(followup) for followup in all_followups]
-            return status, all_followups, totalMatches
-    else:
-        return status, followups, None
+        all_followups = [formattedFollowupRequest(followup) for followup in all_followups]
+        return status, all_followups, totalMatches
     
 
 def get_allocations(instrument_id: int = None, url: str = None, token: str = None):

@@ -3,7 +3,7 @@ from utils import *
 def dump(instrumentId=None, startDate=None, endDate=None, numPerPage=None, url=None, token=None, whitelisted=None, directory=None):
 
     if instrumentId is not None:
-        print(f"Fetching follow-up requests schedule (as csv) for instrument_id: {instrumentId}... Please wait")
+        print(f"Fetching follow-up requests schedule for instrument_id: {instrumentId}... Please wait")
     else:
         print(f"Fetching follow-up requests... Please wait")
     status, followups, totalMatches = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
