@@ -9,6 +9,8 @@ import numpy as np
 import healpy as hp
 import re
 from datetime import datetime
+import pandas as pd
+import io
 
 group_fields = ['name']
 telescope_fields = ['name', 'nickname', 'lat', 'lon', 'elevation', 'diameter', 'robotic', 'fixed_location', 'skycam_link', 'weather_link']
@@ -969,14 +971,16 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
 
     if instrument_id is not None:
         endpoint += f"/schedule/{instrument_id}"
+        params = {}
+    else:
+        params = {
+            "pageNumber": pageNumber,
+            "numPerPage": numPerPage,
+        }
         
     if output_format not in [None, 'png', 'pdf', 'csv']:
         raise ValueError("If you specify an output format, it must be one of: 'png', 'pdf', 'csv'")
-
-    params = {
-        "pageNumber": pageNumber,
-        "numPerPage": numPerPage,
-    }
+    
 
     if source_id is not None:
         params["source_id"] = source_id
@@ -998,13 +1002,13 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     status = response.status_code
     if status == 200:
         if instrument_id:
-            # retrieve the response, which is a pdf file
-            filename = f"followup_requests_{instrument_id}.csv"
-            return status, filename, response.content
+            df = pd.read_csv(io.BytesIO(response.content), index_col=0)
+            df_dict = df.to_dict(orient='records')
+            return status, df_dict
         else:
-            return status, [] if response.json()["data"] is None else response.json()["data"], None
+            return status, [] if response.json()["data"] is None else response.json()["data"]
     else:
-        return status, None, None
+        return status, None
 
 def get_all_followup_requests(instrument_id: int = None, source_id: str = None, startDate: str = None, endDate: str = None, status: str = None, observationStartDate: str = None, observationEndDate: str = None, output_format: str = None, url: str = None, token: str = None):
     """
@@ -1014,26 +1018,35 @@ def get_all_followup_requests(instrument_id: int = None, source_id: str = None, 
     pageNumber = 1
     numPerPage = 100
     all_followups = []
-    if instrument_id is not None:
-        status, filename, file_data = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-        if status == 200:
-            return status, filename, file_data
-        else:
-            return status, None, None
-    else:
-        status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-        if status != 200:
-            return status, None, None
-        else:
-            all_followups = followups['followup_requests']
-            totalMatches = followups['totalMatches']
-            while int(pageNumber*numPerPage) < int(totalMatches):
-                pageNumber += 1
-                status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-                if status != 200:
-                    return status, None, None
-                else:
-                    all_followups.extend(followups['followup_requests'])
+    
+    status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+    if status != 200:
+        return status, None, None
+    elif instrument_id is None:
+        all_followups = followups['followup_requests']
+        totalMatches = followups['totalMatches']
+        while int(pageNumber*numPerPage) < int(totalMatches):
+            pageNumber += 1
+            status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+            if status != 200:
+                return status, None, None
+            else:
+                all_followups.extend(followups['followup_requests'])
 
             all_followups = [formattedFollowupRequest(followup) for followup in all_followups]
             return status, all_followups, totalMatches
+    else:
+        return status, followups, None
+    
+
+def get_allocations(instrument_id: int = None, url: str = None, token: str = None):
+    """
+    Get the allocations for an instrument.
+    """
+
+    response = api('GET', f"{url}/api/allocation/{instrument_id}", token=token)
+    status = response.status_code
+    if status == 200:
+        return status, [] if response.json()["data"] is None else response.json()["data"]
+    else:
+        return status, None

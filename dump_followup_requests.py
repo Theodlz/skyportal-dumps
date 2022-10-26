@@ -1,24 +1,19 @@
 from utils import *
 
 def dump(instrumentId=None, startDate=None, endDate=None, numPerPage=None, url=None, token=None, whitelisted=None, directory=None):
+
     if instrumentId is not None:
         print(f"Fetching follow-up requests schedule (as csv) for instrument_id: {instrumentId}... Please wait")
-        status, filename, file_data = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
-        if status == 200:
-            with open("{}/{}".format(directory, filename), "wb") as f:
-                f.write(file_data)
-        else:
-            print("Error: no follow-up requests found using these parameters")
     else:
         print(f"Fetching follow-up requests... Please wait")
-        status, followups, totalMatches = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
-        if status == 200:
-            data_to_yaml = {
-            "followup_requests": followups,
-            }
+    status, followups, totalMatches = get_all_followup_requests(instrument_id=instrumentId, startDate=startDate, endDate=endDate, url=url, token=token)
+    if status == 200:
+        data_to_yaml = {
+        "followup_requests": followups,
+        }
 
-            print(f"Saving data to '{directory}/data.yaml'")
-            dict_to_yaml(data_to_yaml, f"{directory}/data.yaml")
+        print(f"Saving data to '{directory}/data.yaml'")
+        dict_to_yaml(data_to_yaml, f"{directory}/data.yaml")
     
 
 def main():
