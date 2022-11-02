@@ -9,6 +9,8 @@ import numpy as np
 import healpy as hp
 import re
 from datetime import datetime
+import pandas as pd
+import io
 
 group_fields = ['name']
 telescope_fields = ['name', 'nickname', 'lat', 'lon', 'elevation', 'diameter', 'robotic', 'fixed_location', 'skycam_link', 'weather_link']
@@ -16,7 +18,19 @@ instrument_fields = ['name', 'type', 'band', 'telescope_id', 'filters', 'api_cla
 source_fields = ['id', 'ra', 'dec', 'origin', 'alias', 'group_ids', 'redshift']
 photometry_fields = ['mjd', 'filter', 'mag', 'magerr', 'magsys', 'limiting_mag', 'ra', 'dec', 'ra_unc', 'dec_unc', 'origin']
 photometry_ref_fields = ['obj_id', 'instrument_id', 'group_ids', 'file']
-followups_fields = ['last_modified_by_id', 'obj_id', 'payload', 'status', 'allocation_id', 'created_at', 'id', 'modified', 'requester_id']
+followups_fields = ['obj_id', 'allocation_id', 'payload', 'status']
+allocation_fields = ['pi', 'proposal_id', 'start_date', 'end_date', 'hours_allocated', 'group_id', 'instrument_id', 'default_share_group_ids']
+
+public_group = {
+    "=id": "public_group_id",
+    "name": "Public Group",
+    "single_user_group": False,
+}
+public_user = {
+    "=id": "public_user_id",
+    "username": "public_user",
+    "group_ids": ["=public_group_id"],
+}
 
 class MyDumper(yaml.SafeDumper):
     def write_line_break(self, data=None):
@@ -62,6 +76,26 @@ def dict_to_yaml(dict, file_path):
     ----------
         None
     """
+    # check if the file exists already
+
+    if os.path.exists(file_path):
+        # if it does, load it and update the values
+        data = yaml_to_dict(file_path)
+
+        for k, v in data.items():
+            print(k)
+            if k not in dict:
+                dict[k] = v
+            else:
+                if isinstance(v, list):
+                    dict[k].extend(
+                        [value for value in v if not any([value['=id'] == value2['=id'] if '=id' in value2 else value['id'] == value2['id'] for value2 in dict[k]])]
+                        )
+
+    # reorder the keys using a defined order
+    order = ['groups', 'user', 'telescope', 'instrument', 'sources', 'photometry', 'allocation', 'followup_request', 'gcn_event']
+    dict = {k: dict[k] for k in order if k in dict}
+
     with open(
         file_path,
         "w",
@@ -949,14 +983,25 @@ def seperate_sources_from_phot(data: list, directory: str = None):
 
     return source_list_to_yaml, photometry_list_to_yaml, instrument_ids_full_list
 
-def formattedFollowupRequest(followupRequest):
+def formattedFollowupRequest(followupRequest, index):
     """
     Keep only the fields that are needed.
     """
+    print(followupRequest)
     formatted_followup = {}
     for field in followups_fields:
         if field in followupRequest:
             formatted_followup[field] = followupRequest[field]
+
+    formatted_followup['=id'] = f"request_{index}"
+    formatted_followup['allocation_id'] = f"={followupRequest['allocation']['pi'].strip()}_{followupRequest['allocation']['instrument']['name'].strip()}_{followupRequest['allocation']['start_date'].strip()}_{followupRequest['allocation']['end_date'].strip()}_{str(followupRequest['allocation']['hours_allocated']).strip()}"
+
+    time_fields = ['start_date', 'end_date']
+    for field in time_fields:
+        print(formatted_followup['payload'][field])
+        formatted_followup['payload'][field] = datetime.strptime(formatted_followup['payload'][field], '%Y-%m-%d')
+        print(formatted_followup['payload'][field])
+
     
     return formatted_followup
 
@@ -965,46 +1010,32 @@ def get_followup_requests(instrument_id: int = None, source_id: str = None, star
     Get the followup requests for a source.
     """
 
-    endpoint = f"{url}/api/followup_request"
-
-    if instrument_id is not None:
-        endpoint += f"/schedule/{instrument_id}"
+    params = {
+            "pageNumber": pageNumber,
+            "numPerPage": numPerPage,
+        }
         
     if output_format not in [None, 'png', 'pdf', 'csv']:
         raise ValueError("If you specify an output format, it must be one of: 'png', 'pdf', 'csv'")
-
-    params = {
-        "pageNumber": pageNumber,
-        "numPerPage": numPerPage,
-    }
-
+    
+    if instrument_id is not None:
+        params["instrumentID"] = instrument_id
     if source_id is not None:
-        params["source_id"] = source_id
+        params["sourceID"] = source_id
     if startDate is not None:
         params["startDate"] = startDate
     if endDate is not None:
         params["endDate"] = endDate
     if status is not None:
         params["status"] = status
-    if observationStartDate is not None:
-        params["observationStartDate"] = observationStartDate
-    if observationEndDate is not None:
-        params["observationEndDate"] = observationEndDate
-    if output_format is not None:
-        params["output_format"] = output_format
 
     headers = {'Authorization': f'token {token}'}
-    response = requests.get(endpoint, params=params, headers=headers)
+    response = requests.get(f"{url}/api/followup_request", params=params, headers=headers)
     status = response.status_code
     if status == 200:
-        if instrument_id:
-            # retrieve the response, which is a pdf file
-            filename = f"followup_requests_{instrument_id}.csv"
-            return status, filename, response.content
-        else:
-            return status, [] if response.json()["data"] is None else response.json()["data"], None
+        return status, [] if response.json()["data"] is None else response.json()["data"]
     else:
-        return status, None, None
+        return status, None
 
 def get_all_followup_requests(instrument_id: int = None, source_id: str = None, startDate: str = None, endDate: str = None, status: str = None, observationStartDate: str = None, observationEndDate: str = None, output_format: str = None, url: str = None, token: str = None):
     """
@@ -1014,26 +1045,54 @@ def get_all_followup_requests(instrument_id: int = None, source_id: str = None, 
     pageNumber = 1
     numPerPage = 100
     all_followups = []
-    if instrument_id is not None:
-        status, filename, file_data = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-        if status == 200:
-            return status, filename, file_data
-        else:
-            return status, None, None
+    
+    status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+    if status != 200:
+        return status, None, None
     else:
-        status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-        if status != 200:
-            return status, None, None
-        else:
-            all_followups = followups['followup_requests']
-            totalMatches = followups['totalMatches']
-            while int(pageNumber*numPerPage) < int(totalMatches):
-                pageNumber += 1
-                status, followups, _ = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
-                if status != 200:
-                    return status, None, None
-                else:
-                    all_followups.extend(followups['followup_requests'])
+        all_followups = followups['followup_requests']
+        totalMatches = followups['totalMatches']
+        while int(pageNumber*numPerPage) < int(totalMatches):
+            pageNumber += 1
+            status, followups = get_followup_requests(instrument_id, source_id, startDate, endDate, None, observationStartDate, observationEndDate, output_format, pageNumber, numPerPage, url, token)
+            if status != 200:
+                return status, None, None
+            else:
+                all_followups.extend(followups['followup_requests'])
+        return status, all_followups, totalMatches
+    
 
-            all_followups = [formattedFollowupRequest(followup) for followup in all_followups]
-            return status, all_followups, totalMatches
+def get_allocations(instrument_id: int = None, url: str = None, token: str = None):
+    """
+    Get the allocations for an instrument.
+    """
+
+    response = api('GET', f"{url}/api/allocation/{instrument_id}", token=token)
+    status = response.status_code
+    data = []
+    if response.json()["data"] is not None:
+        if isinstance(response.json()["data"], list):
+            data = response.json()["data"]
+        else:
+            data = [response.json()["data"]]
+    if status == 200:
+        return status, data
+    else:
+        return status, None
+
+def formattedAllocation(allocation: dict = None, instrument_yaml_ids: list = None):
+    """
+    Format the allocations
+    """
+    formatted_allocation = {}
+    for field in allocation_fields:
+        if field in allocation:
+            formatted_allocation[field] = allocation[field]
+    formatted_allocation['=id'] = f"{allocation['pi'].strip()}_{instrument_yaml_ids[allocation['instrument_id']]}_{allocation['start_date'].strip()}_{allocation['end_date'].strip()}_{str(allocation['hours_allocated']).strip()}"
+    formatted_allocation['instrument_id'] = f"={instrument_yaml_ids[allocation['instrument_id']]}"
+    formatted_allocation['group_id'] = f"=public_group_id"
+    formatted_allocation['default_share_group_ids'] = ["=public_group_id"]
+    return formatted_allocation
+
+    
+
